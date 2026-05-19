@@ -1,0 +1,18 @@
+{
+  "name": "analyst-momentum",
+  "version": "1.0.0",
+  "description": "Sell-Side Analyst Rating Revision Velocity Intelligence for CTX Protocol Marketplace",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "dependencies": {
+    "@ctxprotocol/sdk": "latest",
+    "@modelcontextprotocol/sdk": "1.10.2",
+    "dotenv": "^16.0.0",
+    "express": "^4.18.2",
+    "node-fetch": "^2.7.0",
+    "zod": "3.23.8"
+  }
+}
