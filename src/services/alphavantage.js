@@ -4,7 +4,7 @@
 // Returns: current analyst rating breakdown + target price
 // Free tier — register at alphavantage.co for free key
 
-const fetch = require("node-fetch");
+const axios = require("axios");
 const { get, set } = require("../utils/cache");
 
 const BASE_URL = "https://www.alphavantage.co/query";
@@ -26,13 +26,13 @@ async function fetchAnalystSnapshot(ticker) {
 
   const url = `${BASE_URL}?function=OVERVIEW&symbol=${ticker.toUpperCase()}&apikey=${process.env.ALPHAVANTAGE_API_KEY}`;
 
-  const response = await fetch(url);
+  const response = await axios.get(url);
 
-  if (!response.ok) {
-    throw new Error(`Alpha Vantage API error: ${response.status} ${response.statusText}`);
+  if (!response.data) {
+    throw new Error("Alpha Vantage API error");
   }
 
-  const data = await response.json();
+  const data = response.data;
 
   // Alpha Vantage returns empty object or Note field if rate limited or invalid
   if (!data || data.Note || data["Error Message"] || !data.Symbol) {

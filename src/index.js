@@ -12,7 +12,7 @@ const { getAnalystMomentum } = require("./tools/analyst_momentum");
 
 const app = express();
 app.use(express.json());
-// app.use(createContextMiddleware()); // uncomment before deploy
+ app.use(createContextMiddleware()); // uncomment before deploy
 
 const TICKER_INPUT = {
   type: "object",

@@ -4,7 +4,7 @@
 // Returns: 4-5 months of buy/strongBuy/hold/sell/strongSell counts
 // Free tier — no paid plan required
 
-const fetch = require("node-fetch");
+const axios = require("axios");
 const { get, set } = require("../utils/cache");
 
 const BASE_URL = "https://finnhub.io/api/v1";
@@ -23,13 +23,13 @@ async function fetchRecommendationTrend(ticker) {
 
   const url = `${BASE_URL}/stock/recommendation?symbol=${ticker.toUpperCase()}&token=${process.env.FINNHUB_API_KEY}`;
 
-  const response = await fetch(url);
+  const response = await axios.get(url);
 
-  if (!response.ok) {
-    throw new Error(`Finnhub API error: ${response.status} ${response.statusText}`);
+  if (!response.data) {
+    throw new Error("Finnhub API error");
   }
 
-  const data = await response.json();
+  const data = response.data;
 
   if (!Array.isArray(data) || data.length === 0) {
     throw new Error(`No recommendation data available for ${ticker}`);
