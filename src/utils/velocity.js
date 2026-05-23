@@ -141,4 +141,129 @@ function computeVelocity(ticker, finnhubMonths) {
   };
 }
 
-module.exports = { computeVelocity, calcBullishRatio };
+// ─── NEW: Event-based velocity functions ────────────────────────────────────
+
+/**
+ * Get the most active analyst firm from a list of events
+ */
+function getLeadingFirm(events) {
+  if (!events || events.length === 0) return null;
+  const firmCounts = {};
+  for (const e of events) {
+    if (e.firm) firmCounts[e.firm] = (firmCounts[e.firm] || 0) + 1;
+  }
+  return Object.keys(firmCounts).sort((a, b) => firmCounts[b] - firmCounts[a])[0] || null;
+}
+
+/**
+ * Compute event-based velocity score from individual upgrade/downgrade events
+ * Uses 60-day rolling window from Yahoo Finance upgradeDowngradeHistory
+ * Score: net upgrades scaled to 0-100. 0 net events = 0 (truly stale), +5 net = ~100
+ */
+function computeVelocityFromEvents(events) {
+  if (!events || events.length === 0) {
+    return {
+      eventVelocityScore: null,
+      upgrades60d: [],
+      leadingFirm: null,
+      upgrades60dCount: 0,
+      downgrades60dCount: 0,
+      netEvents60d: 0,
+    };
+  }
+
+  const nowEpoch = Math.floor(Date.now() / 1000);
+  const days60Secs = 60 * 24 * 3600;
+
+  // Filter to last 60 days, only real upgrades and downgrades
+  const events60d = events.filter(
+    (e) => (nowEpoch - e.epochGradeDate) <= days60Secs && ["up", "down"].includes(e.action)
+  );
+
+  let upgrades60 = 0;
+  let downgrades60 = 0;
+
+  for (const e of events60d) {
+    if (e.action === "up") upgrades60++;
+    else if (e.action === "down") downgrades60++;
+  }
+
+  const netEvents60 = upgrades60 - downgrades60;
+  const totalEvents60 = upgrades60 + downgrades60;
+
+  // Score: 50 = neutral, each net upgrade adds 10 points, capped 0-100
+  // If no events at all in 60 days → 0 (truly stale, not just neutral)
+  let eventVelocityScore = null;
+  if (totalEvents60 > 0) {
+    eventVelocityScore = Math.min(100, Math.max(0, Math.round(50 + netEvents60 * 10)));
+  }
+
+  // Format events for output
+  const upgrades60dFormatted = events60d.map((e) => ({
+    date:      new Date(e.epochGradeDate * 1000).toISOString().substring(0, 10),
+    firm:      e.firm      || "Unknown",
+    fromGrade: e.fromGrade || null,
+    toGrade:   e.toGrade   || null,
+    action:    e.action,
+  }));
+
+  return {
+    eventVelocityScore,
+    upgrades60d:        upgrades60dFormatted,
+    leadingFirm:        getLeadingFirm(events60d),
+    upgrades60dCount:   upgrades60,
+    downgrades60dCount: downgrades60,
+    netEvents60d:       netEvents60,
+  };
+}
+
+/**
+ * Blend monthly velocity score with event-based velocity score
+ * If events exist: 60% event score + 40% monthly score
+ * If no events: monthly score only
+ */
+function blendVelocityScores(monthlyScore, eventScore) {
+  if (eventScore === null) return monthlyScore;
+  return Math.round(eventScore * 0.6 + monthlyScore * 0.4);
+}
+
+/**
+ * Compute percentile of current bullishRatio within available monthly history
+ * Note: based on available data window (4-5 months Finnhub), not full 3yr
+ */
+function computePercentile(currentRatio, monthlyTrend) {
+  if (!monthlyTrend || monthlyTrend.length < 2) return null;
+  const allRatios = monthlyTrend.map((m) => m.bullishRatio);
+  const below = allRatios.filter((r) => r <= currentRatio).length;
+  return parseFloat((below / allRatios.length).toFixed(2));
+}
+
+/**
+ * Compute price target delta and dispersion from Yahoo Finance price target data
+ * priceTargetDelta: % upside from current price to mean analyst target
+ * priceTargetDispersion: (high - low) / mean — measures analyst disagreement
+ */
+function computePriceTargetMetrics(ptData) {
+  if (!ptData) return { priceTargetDelta: null, priceTargetDispersion: null };
+
+  const priceTargetDelta =
+    ptData.targetMeanPrice && ptData.currentPrice
+      ? parseFloat(((ptData.targetMeanPrice - ptData.currentPrice) / ptData.currentPrice).toFixed(4))
+      : null;
+
+  const priceTargetDispersion =
+    ptData.targetHighPrice && ptData.targetLowPrice && ptData.targetMeanPrice
+      ? parseFloat(((ptData.targetHighPrice - ptData.targetLowPrice) / ptData.targetMeanPrice).toFixed(4))
+      : null;
+
+  return { priceTargetDelta, priceTargetDispersion };
+}
+
+module.exports = {
+  computeVelocity,
+  calcBullishRatio,
+  computeVelocityFromEvents,
+  blendVelocityScores,
+  computePercentile,
+  computePriceTargetMetrics,
+};
