@@ -10,9 +10,8 @@ const { getAnalystMomentum } = require("./tools/analyst_momentum");
 
 const app = express();
 app.use(express.json());
-//app.use(createContextMiddleware());
+app.use(createContextMiddleware());
 
-// ─── Input Schemas ────────────────────────────────────────────────────────────
 
 const TICKER_INPUT = {
   type: "object",
@@ -374,7 +373,7 @@ app.post("/mcp", async (req, res) => {
 
     try {
 
-      // ── screen_analyst_momentum ──────────────────────────────────────────
+      
       if (name === "screen_analyst_momentum") {
         const tickers = (args?.tickers || []).map(t => t.toUpperCase().trim()).slice(0, 5);
         if (tickers.length < 2) throw new Error("Provide at least 2 tickers to screen");
@@ -406,7 +405,7 @@ app.post("/mcp", async (req, res) => {
         };
       }
 
-      // ── compare_analyst_momentum (2-way or 3-way) ────────────────────────
+      // ── compare_analyst_momentum (2-way or 3-way) 
       if (name === "compare_analyst_momentum") {
         const fetches = [getAnalystMomentum(ticker1), getAnalystMomentum(ticker2)];
         if (ticker3) fetches.push(getAnalystMomentum(ticker3));
