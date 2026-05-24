@@ -1,10 +1,11 @@
 // src/tools/analyst_momentum.js
 // Main tool handler for AnalystMomentum
-// Wires Finnhub + Alpha Vantage + Yahoo Finance + velocity engine into one structured verdict
+// Wires Finnhub + Alpha Vantage + FMP + velocity engine into one structured verdict
 
 const axios = require("axios");
 const { fetchRecommendationTrend } = require("../services/finnhub");
 const { fetchAnalystSnapshot } = require("../services/alphavantage");
+const { get, set } = require("../utils/cache");
 const {
   computeVelocity,
   calcBullishRatio,
@@ -14,71 +15,72 @@ const {
   computePriceTargetMetrics,
 } = require("../utils/velocity");
 
-// ─── Inline Yahoo Finance fetchers (free, no API key required) ───────────────
+// ─── FMP Price Target + Finnhub Current Price ────────────────────────────────
 
-const YF_BASE = "https://query2.finance.yahoo.com/v10/finance/quoteSummary";
-const YF_HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-  "Accept": "application/json",
-};
+const FMP_KEY = process.env.FMP_API_KEY;
 
 /**
- * Fetch individual analyst upgrade/downgrade events from Yahoo Finance
- * Returns array sorted newest first
- * Works reliably from server environments (Render) — may be blocked on local/residential IPs
- */
-async function fetchYahooEvents(ticker) {
-  try {
-    const url = `${YF_BASE}/${ticker}?modules=upgradeDowngradeHistory`;
-    const res = await axios.get(url, { headers: YF_HEADERS, timeout: 8000 });
-    const history = res.data?.quoteSummary?.result?.[0]?.upgradeDowngradeHistory?.history || [];
-    return history.sort((a, b) => b.epochGradeDate - a.epochGradeDate);
-  } catch (err) {
-    console.warn(`[Yahoo] Events fetch failed for ${ticker}: ${err.message}`);
-    return []; // Non-fatal — degrades gracefully
-  }
-}
-
-/**
- * Fetch price target high/low/mean and current price from Yahoo Finance
+ * Fetch price target consensus from FMP stable endpoint
+ * Fetch current price from Finnhub /quote (free tier, confirmed working)
+ * Cached for 6 hours to avoid FMP rate limits on free tier
  * Used to compute priceTargetDelta and priceTargetDispersion
- * Works reliably from server environments (Render) — may be blocked on local/residential IPs
  */
-async function fetchYahooPriceTargets(ticker) {
+async function fetchPriceTargetData(ticker) {
+  const cacheKey = `fmp:pricetarget:${ticker}`;
+  const cached = get(cacheKey);
+  if (cached) {
+    console.log(`[FMP] Cache hit for ${ticker} price target`);
+    return cached;
+  }
+
   try {
-    const url = `${YF_BASE}/${ticker}?modules=financialData`;
-    const res = await axios.get(url, { headers: YF_HEADERS, timeout: 8000 });
-    const fd = res.data?.quoteSummary?.result?.[0]?.financialData;
-    if (!fd) return null;
-    return {
-      targetHighPrice:   fd.targetHighPrice?.raw   || null,
-      targetLowPrice:    fd.targetLowPrice?.raw    || null,
-      targetMeanPrice:   fd.targetMeanPrice?.raw   || null,
-      targetMedianPrice: fd.targetMedianPrice?.raw || null,
-      currentPrice:      fd.currentPrice?.raw      || null,
+    const [ptRes, quoteRes] = await Promise.allSettled([
+      axios.get(`https://financialmodelingprep.com/stable/price-target-consensus?symbol=${ticker}&apikey=${FMP_KEY}`, { timeout: 10000 }),
+      axios.get(`https://finnhub.io/api/v1/quote?symbol=${ticker}&token=${process.env.FINNHUB_API_KEY}`, { timeout: 10000 }),
+    ]);
+
+    const ptRaw    = ptRes.status    === "fulfilled" ? ptRes.value.data    : null;
+    const quoteRaw = quoteRes.status === "fulfilled" ? quoteRes.value.data : null;
+
+    // FMP stable returns an array
+    const pt = Array.isArray(ptRaw) ? ptRaw[0] : ptRaw;
+    if (!pt || !pt.targetConsensus) {
+      console.warn(`[FMP] No price target data for ${ticker}`);
+      return null;
+    }
+
+    // Finnhub quote: c = current price
+    const currentPrice = quoteRaw && quoteRaw.c ? quoteRaw.c : null;
+
+    const data = {
+      targetHighPrice:   pt.targetHigh      || null,
+      targetLowPrice:    pt.targetLow       || null,
+      targetMeanPrice:   pt.targetConsensus || null,
+      targetMedianPrice: pt.targetMedian    || null,
+      currentPrice,
     };
+
+    // Cache for 6 hours — price targets don't change that frequently
+    set(cacheKey, data, 6 * 60 * 60 * 1000);
+    console.log(`[FMP] Price target for ${ticker} — mean: ${data.targetMeanPrice}, current: ${data.currentPrice}`);
+    return data;
+
   } catch (err) {
-    console.warn(`[Yahoo] Price target fetch failed for ${ticker}: ${err.message}`);
-    return null; // Non-fatal — degrades gracefully
+    console.warn(`[FMP] Price target fetch failed for ${ticker}: ${err.message}`);
+    return null;
   }
 }
 
 // ─── Core function — called by all 8 MCP tools ───────────────────────────────
 
-/**
- * Core function — called by all 8 MCP tools
- * Fetches from all three sources in parallel and returns complete intelligence object
- */
 async function getAnalystMomentum(ticker) {
   const symbol = ticker.toUpperCase().trim();
 
   // Fetch all sources in parallel for speed
-  // Yahoo Finance failures are non-fatal — tool still works on Finnhub + AV alone
-  const [finnhubResult, avResult, yahooEventsResult, yahooPtResult] = await Promise.allSettled([
+  const [finnhubResult, avResult, ptResult] = await Promise.allSettled([
     fetchRecommendationTrend(symbol),
     fetchAnalystSnapshot(symbol),
-    fetchYahooEvents(symbol),
-    fetchYahooPriceTargets(symbol),
+    fetchPriceTargetData(symbol),
   ]);
 
   // Finnhub is primary — fail hard if it's down
@@ -87,17 +89,14 @@ async function getAnalystMomentum(ticker) {
   }
 
   const months   = finnhubResult.value;
-  const snapshot = avResult.status === "fulfilled"          ? avResult.value          : null;
-  const events   = yahooEventsResult.status === "fulfilled" ? yahooEventsResult.value : [];
-  const ptData   = yahooPtResult.status === "fulfilled"     ? yahooPtResult.value     : null;
+  const snapshot = avResult.status === "fulfilled" ? avResult.value : null;
+  const ptData   = ptResult.status  === "fulfilled" ? ptResult.value : null;
 
-  // Run monthly velocity engine on Finnhub data (unchanged)
+  // Run monthly velocity engine on Finnhub data
   const velocity = computeVelocity(symbol, months);
 
-  // Run event-based velocity from Yahoo Finance individual upgrade/downgrade events
-  const eventVelocity = computeVelocityFromEvents(events);
-
-  // Blend: 60% event-based + 40% monthly when events exist, else monthly only
+  // No individual events on free tier — velocity uses monthly only
+  const eventVelocity = computeVelocityFromEvents([]);
   const blendedVelocityScore = blendVelocityScores(velocity.velocityScore, eventVelocity.eventVelocityScore);
 
   // Build current consensus from Finnhub latest month
@@ -115,7 +114,7 @@ async function getAnalystMomentum(ticker) {
     bearishRatio,
   };
 
-  // Price target — prefer Yahoo mean (more granular), fall back to Alpha Vantage
+  // Price target — prefer FMP consensus, fall back to Alpha Vantage
   let analystTargetPrice = null;
   if (ptData && ptData.targetMeanPrice) {
     analystTargetPrice = ptData.targetMeanPrice;
@@ -123,30 +122,27 @@ async function getAnalystMomentum(ticker) {
     analystTargetPrice = snapshot.analystTargetPrice;
   }
 
-  // Compute new fields
+  // Compute price target metrics and percentile
   const { priceTargetDelta, priceTargetDispersion } = computePriceTargetMetrics(ptData);
   const percentile3yr = computePercentile(bullishRatio, velocity.monthlyTrend);
 
-  // Confidence: lower if secondary sources failed
+  // Confidence
   let confidence = 0.88;
-  if (!snapshot)           confidence -= 0.05;
-  if (events.length === 0) confidence -= 0.05;
-  if (!ptData)             confidence -= 0.03;
-  if (months.length < 3)   confidence -= 0.10;
+  if (!snapshot) confidence -= 0.05;
+  if (!ptData)   confidence -= 0.03;
+  if (months.length < 3) confidence -= 0.10;
   confidence = parseFloat(Math.max(0.5, confidence).toFixed(2));
 
-  // Build sourceRefs dynamically based on what succeeded
+  // Build sourceRefs dynamically
   const sourceRefs = [
     "Finnhub Stock Recommendation API — free tier, monthly consensus",
     snapshot
       ? "Alpha Vantage OVERVIEW API — free tier, current analyst snapshot"
       : "Alpha Vantage — unavailable for this query",
   ];
-  if (events.length > 0) {
-    sourceRefs.push("Yahoo Finance upgradeDowngradeHistory — free tier, individual analyst events");
-  }
   if (ptData) {
-    sourceRefs.push("Yahoo Finance financialData — free tier, price target high/low/mean");
+    sourceRefs.push("Financial Modeling Prep Price Target API — free tier, consensus price target high/low/mean");
+    sourceRefs.push("Finnhub Quote API — free tier, current price for delta computation");
   }
 
   return {
@@ -159,8 +155,8 @@ async function getAnalystMomentum(ticker) {
     analystTargetPrice,
     monthlyTrend:         velocity.monthlyTrend,
     netRevisionRatio:     velocity.netRevisionRatio,
-    upgrades60d:          eventVelocity.upgrades60d,
-    leadingFirm:          eventVelocity.leadingFirm,
+    upgrades60d:          [],
+    leadingFirm:          null,
     priceTargetDelta,
     priceTargetDispersion,
     percentile3yr,
@@ -169,8 +165,8 @@ async function getAnalystMomentum(ticker) {
     confidence,
     freshnessNote:
       "Finnhub data updates monthly. Alpha Vantage updates daily. " +
-      "Yahoo Finance events update in near real-time. " +
-      "Velocity score blends 60-day individual events (60%) with 4-5 month monthly trend (40%).",
+      "FMP price target updates daily. Finnhub quote updates in real-time. " +
+      "Velocity score reflects 4-5 month monthly consensus trend.",
   };
 }
 

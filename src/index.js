@@ -314,42 +314,42 @@ const SCREEN_OUTPUT = {
 const TOOLS = [
   {
     name: "get_analyst_momentum",
-    description: "Returns full sell-side analyst revision velocity for any US-listed stock. Includes individual upgrade/downgrade events (60d), price target dispersion, leading firm, and percentile. Regime: Stale, Awakening, Accelerating, Peak, or Decelerating. Replaces Capital IQ and TipRanks at $0.10 per query.",
+    description: "Returns full sell-side analyst sentiment regime intelligence for any US-listed stock. Tracks how fast monthly consensus is shifting across 4-5 months of data. Regime: Stale, Awakening, Accelerating, Peak, or Decelerating. Includes price target dispersion, upside delta, and 3-year percentile. Replaces Capital IQ and TipRanks at $0.10 per query.",
     inputSchema: TICKER_INPUT, outputSchema: FULL_OUTPUT
   },
   {
     name: "get_analyst_consensus",
-    description: "Returns current sell-side analyst consensus breakdown. Shows strong buy, buy, hold, sell, strong sell counts, bullish ratio, price target, and leading analyst firm. Answers: What percentage of analysts are bullish right now?",
+    description: "Returns current sell-side analyst consensus breakdown. Shows strong buy, buy, hold, sell, strong sell counts, bullish ratio, and price target. Answers: What percentage of analysts are bullish on this stock right now?",
     inputSchema: TICKER_INPUT, outputSchema: CONSENSUS_OUTPUT
   },
   {
     name: "get_analyst_price_target",
-    description: "Returns consensus analyst price target, upside delta from current price, and dispersion between high and low targets. Answers: What price are analysts targeting and how much do analysts disagree?",
+    description: "Returns consensus analyst price target, upside delta from current price, and dispersion between high and low targets. Answers: What price are analysts targeting and how much do analysts disagree on this stock?",
     inputSchema: TICKER_INPUT, outputSchema: PRICE_TARGET_OUTPUT
   },
   {
     name: "get_sentiment_shift",
-    description: "Returns how much sell-side sentiment has shifted over 4-5 months plus individual upgrade/downgrade events in the last 60 days. Answers: How dramatically has analyst opinion changed and who is driving the shift?",
+    description: "Returns how much sell-side monthly consensus has shifted over the last 4-5 months. Tracks bullish ratio change month by month. Answers: How dramatically has analyst opinion changed and is the shift accelerating or decelerating?",
     inputSchema: TICKER_INPUT, outputSchema: SENTIMENT_SHIFT_OUTPUT
   },
   {
     name: "compare_analyst_momentum",
-    description: "Compares sell-side analyst momentum between two or three stocks. Supports 2-way and 3-way comparison. Answers: Which stock has the strongest bullish analyst momentum right now?",
+    description: "Compares sell-side analyst sentiment regime between two or three stocks. Supports 2-way and 3-way comparison. Answers: Which stock has the strongest bullish monthly sentiment shift right now?",
     inputSchema: COMPARE_INPUT, outputSchema: COMPARE_OUTPUT
   },
   {
     name: "get_analyst_conviction",
-    description: "Returns analyst conviction strength by comparing Strong Buy vs Buy ratio, plus the leading firm driving conviction. Answers: Are analysts mildly bullish or strongly convicted on this stock?",
+    description: "Returns analyst conviction strength by comparing Strong Buy vs Buy ratio. Answers: Are analysts mildly bullish or strongly convicted on this stock — is the bullish stance deep or shallow?",
     inputSchema: TICKER_INPUT, outputSchema: CONVICTION_OUTPUT
   },
   {
     name: "get_bearish_reversal_signal",
-    description: "Detects whether sell-side analysts are turning bearish using both monthly trend and individual downgrade events in the last 60 days. Answers: Is bullish momentum reversing? Are analysts downgrading?",
+    description: "Detects whether sell-side monthly consensus is beginning to turn bearish. Tracks month-over-month ratio delta and regime classification. Answers: Is bullish momentum reversing? Is the monthly consensus beginning to fall?",
     inputSchema: TICKER_INPUT, outputSchema: BEARISH_OUTPUT
   },
   {
     name: "screen_analyst_momentum",
-    description: "Screens and ranks 2-5 stocks by sell-side analyst momentum. Returns a ranked leaderboard with velocity scores, regimes, and leading firms. Answers: Which stock in my watchlist has the strongest analyst momentum right now?",
+    description: "Screens and ranks 2-5 stocks by sell-side monthly sentiment regime score. Returns a ranked leaderboard with velocity scores and regimes. Answers: Which stock in my watchlist has the strongest analyst sentiment shift right now?",
     inputSchema: SCREEN_INPUT, outputSchema: SCREEN_OUTPUT
   }
 ];
