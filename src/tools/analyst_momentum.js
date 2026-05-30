@@ -9,13 +9,11 @@ const { get, set } = require("../utils/cache");
 const {
   computeVelocity,
   calcBullishRatio,
-  computeVelocityFromEvents,
-  blendVelocityScores,
-  computePercentile,
+  computePercentileOfHistory,
   computePriceTargetMetrics,
 } = require("../utils/velocity");
 
-// ─── FMP Price Target + Finnhub Current Price ────────────────────────────────
+//  FMP Price Target + Finnhub Current Price
 
 const FMP_KEY = process.env.FMP_API_KEY;
 
@@ -71,7 +69,7 @@ async function fetchPriceTargetData(ticker) {
   }
 }
 
-// ─── Core function — called by all 8 MCP tools ───────────────────────────────
+// Core function — called by all 8 MCP tools
 
 async function getAnalystMomentum(ticker) {
   const symbol = ticker.toUpperCase().trim();
@@ -94,10 +92,6 @@ async function getAnalystMomentum(ticker) {
 
   // Run monthly velocity engine on Finnhub data
   const velocity = computeVelocity(symbol, months);
-
-  // No individual events on free tier — velocity uses monthly only
-  const eventVelocity = computeVelocityFromEvents([]);
-  const blendedVelocityScore = blendVelocityScores(velocity.velocityScore, eventVelocity.eventVelocityScore);
 
   // Build current consensus from Finnhub latest month
   const latestMonth = months[0];
@@ -122,9 +116,9 @@ async function getAnalystMomentum(ticker) {
     analystTargetPrice = snapshot.analystTargetPrice;
   }
 
-  // Compute price target metrics and percentile
+  // Compute price target metrics and percentile of available history
   const { priceTargetDelta, priceTargetDispersion } = computePriceTargetMetrics(ptData);
-  const percentile3yr = computePercentile(bullishRatio, velocity.monthlyTrend);
+  const percentileOfHistory = computePercentileOfHistory(bullishRatio, velocity.monthlyTrend);
 
   // Confidence
   let confidence = 0.88;
@@ -148,18 +142,16 @@ async function getAnalystMomentum(ticker) {
   return {
     ticker:               symbol,
     oneShotVerdict:       velocity.oneShotVerdict,
-    velocityScore:        blendedVelocityScore,
+    velocityScore:        velocity.velocityScore,
     velocityRegime:       velocity.velocityRegime,
     acceleration:         velocity.acceleration,
     currentConsensus,
     analystTargetPrice,
     monthlyTrend:         velocity.monthlyTrend,
     netRevisionRatio:     velocity.netRevisionRatio,
-    upgrades60d:          [],
-    leadingFirm:          null,
     priceTargetDelta,
     priceTargetDispersion,
-    percentile3yr,
+    percentileOfHistory,
     sourceRefs,
     asOf:          new Date().toISOString().substring(0, 10),
     confidence,

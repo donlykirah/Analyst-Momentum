@@ -141,7 +141,7 @@ function computeVelocity(ticker, finnhubMonths) {
   };
 }
 
-// ─── NEW: Event-based velocity functions ────────────────────────────────────
+//  NEW: Event-based velocity functions
 
 /**
  * Get the most active analyst firm from a list of events
@@ -229,9 +229,9 @@ function blendVelocityScores(monthlyScore, eventScore) {
 
 /**
  * Compute percentile of current bullishRatio within available monthly history
- * Note: based on available data window (4-5 months Finnhub), not full 3yr
+ * Based on available data window (4-5 months Finnhub) — not a 3-year window
  */
-function computePercentile(currentRatio, monthlyTrend) {
+function computePercentileOfHistory(currentRatio, monthlyTrend) {
   if (!monthlyTrend || monthlyTrend.length < 2) return null;
   const allRatios = monthlyTrend.map((m) => m.bullishRatio);
   const below = allRatios.filter((r) => r <= currentRatio).length;
@@ -264,6 +264,6 @@ module.exports = {
   calcBullishRatio,
   computeVelocityFromEvents,
   blendVelocityScores,
-  computePercentile,
+  computePercentileOfHistory,
   computePriceTargetMetrics,
 };
